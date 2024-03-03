@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Box, Tab, Tabs, TextField, Button, Paper } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { Box, Tab, Tabs, TextField, Button, Paper, Alert } from '@mui/material';
 import ShopIcon from '@mui/icons-material/Shop';
 
 const Login = () => {
@@ -7,22 +8,37 @@ const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
-  const [name, setName] = useState('');
+  const [registrationSuccess, setRegistrationSuccess] = useState(false);
+  const navigate = useNavigate(); 
+
   const [avatar, setAvatar] = useState('');
   const [description, setDescription] = useState('');
+
+  const [avatarFile, setAvatarFile] = useState(null);
 
   const handleAvatarChange = (event) => {
     const file = event.target.files[0];
     if (file) {
       setAvatar(URL.createObjectURL(file));
+      setAvatarFile(file);  // Store the file in the state
     }
   };
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
   };
+  const validateForm = () => {
+    
 
+    if (password.length < 8) {
+      alert("Your password must be at least 8 characters long.");
+      return false;
+    }
+
+    return true;
+  };
   const handleLogin = () => {
+    // You may want to add client-side validation here as well.
     fetch('http://localhost:1234/api/account/login', {
       method: 'POST',
       headers: {
@@ -30,43 +46,78 @@ const Login = () => {
       },
       body: JSON.stringify({ email, password }),
     })
-    .then(response => response.json())
+    .then(response => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        // If the response is not ok, parse and throw the error.
+        return response.json().then(error => {
+          throw new Error(error.msg || "Login failed");
+        });
+      }
+    })
     .then(data => {
       console.log('Success:', data);
       // Save JWT
       localStorage.setItem('token', data.token);
+      // Redirect the user or perform other actions on successful login
+      navigate('/');
     })
     .catch((error) => {
       console.error('Error:', error);
+      alert("There was a problem with your login: " + error.message);
     });
   };
+  
 
   const handleRegister = () => {
+    if (!validateForm()) {
+      return; // Stop the registration process if validation fails
+    }
+  
     const formData = new FormData();
     formData.append('email', email);
     formData.append('username', username);
     formData.append('password', password);
-    formData.append('profile', JSON.stringify({
-      name,
-      description,
-    }));
+    
+  
+    // Append the avatar file if it has been uploaded
     const fileInput = document.querySelector('input[type="file"]');
     if (fileInput && fileInput.files[0]) {
       formData.append('avatar', fileInput.files[0]);
     }
+   
 
+    // Append the avatar file to the FormData if it exists
+    if (avatarFile) {
+      formData.append('avatar', avatarFile);
+    }
     fetch('http://localhost:1234/api/account/register', {
       method: 'POST',
-      body: formData,
+      body: formData, // Send the formData object
     })
-    .then(response => response.json())
+    .then(response => {
+      if (!response.ok) {
+        return response.json().then(errorData => {
+          console.error('Registration failed:', errorData);
+          throw new Error(`Error: ${response.status} - ${errorData.message}`);
+        });
+      }
+      return response.json();
+    })
     .then(data => {
       console.log('Success:', data);
+      // Possibly redirect to login page or a success page
+      setRegistrationSuccess(true);
     })
     .catch((error) => {
       console.error('Error:', error);
+      alert("There was a problem with your registration: " + error.message);
     });
   };
+  
+  
+  
 
   const handleGoogleLogin = () => {
     window.location.href = '/api/users/auth/google';
@@ -75,6 +126,7 @@ const Login = () => {
   return (
     <Box sx={{ width: '100%', maxWidth: 360, margin: 'auto', mt: 10 }}>
       <Paper elevation={3} sx={{ p: 2 }}>
+        {registrationSuccess && <Alert severity="success">Registration successful!</Alert>}
         <Tabs
           value={tabValue}
           onChange={handleTabChange}
@@ -110,25 +162,8 @@ const Login = () => {
               fullWidth
               margin="normal"
             />
-            <TextField
-              label="Name"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              fullWidth
-              margin="normal"
-            />
-            <Box sx={{ mb: 2, mt: 2 }}>
-              <Button variant="contained" component="label" sx={{ mb: 2 }}>
-                Upload Avatar
-                <input
-                  type="file"
-                  hidden
-                  accept="image/*"
-                  onChange={handleAvatarChange}
-                />
-              </Button>
-              {avatar && <Box sx={{ mt: 2 }}><img src={avatar} alt="Avatar Preview" style={{ width: '100px', height: '100px' }}/></Box>}
-            </Box>
+            
+           
             <TextField
               label="Description"
               value={description}

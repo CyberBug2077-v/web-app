@@ -8,7 +8,8 @@ console.log(process.env.JWT_SECRET);
 
 const opts = {}
 opts.jwtFromRequest = ExtractJwt.fromAuthHeaderAsBearerToken();
-opts.secretOrKey = process.env.JWT_SECRET;
+// TEMPORARY: Directly set the secret key for testing purposes only.
+opts.secretOrKey = 'verySecretKey123';
 
 passport.use(
     new JwtStrategy(opts, (jwt_payload, done) => {

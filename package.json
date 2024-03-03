@@ -12,6 +12,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "express-validator": "^7.0.1"
+    "express-validator": "^7.0.1",
+    "react-scripts": "^5.0.1"
+  },
+  "devDependencies": {
+    "cypress": "^13.6.6"
   }
 }

@@ -3,18 +3,25 @@ const mongoose = require('mongoose');
 const cardSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // use name of user as a reference
+    ref: 'User', // Card references the id from User
     required: true
   },
-  backgroundImage: {
+  userName: {
     type: String,
-    default: 'default_background_url'
+    required: true // Set to true if you require a userName for every card
   },
   description: {
     type: String,
     default: ''
+  },
+  backgroundImage: {
+    type: String,
+    default: '' // Assuming store the image as a Base64 string
+  },
+  avatarImage: {
+    type: String,
+    default: '/static/images/avatars/default.jpg' // Assuming store the avatar as a Base64 string
   }
-
 });
 
 const Card = mongoose.model('Card', cardSchema);

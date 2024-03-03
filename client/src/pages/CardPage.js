@@ -1,86 +1,107 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Box } from '@mui/material';
 import UserCard from '../components/UserCard/UserCard';
-
-const usersData = [
-    { id: 1, name: 'Alice', details: 'Loves cats and climbing.' },
-    { id: 2, name: 'Bob', details: 'Enjoys music and hiking.' },
-    // ...Other users
-];
+import { useNavigate } from 'react-router-dom';
 
 const CardPage = () => {
-    const [users, setUsers] = useState([]);
+  const [cards, setCards] = useState([]);
+  const navigate = useNavigate();
 
-    useEffect(() => {
-        // fetchUsers().then(data => setUsers(data));
-        setUsers(usersData);
-    }, []);
-  
-        // User dislike
-    const handleSwipeLeft = (userId) => {
-        console.log('Swiped left on user:', userId);
-        // Remove dragged card from list
-        setUsers(users.filter(user => user.id !== userId));
-    };
 
-    // User like
-    const handleSwipeRight = (userId) => {
-        console.log('Swiped right on user:', userId);
-        setUsers(users.filter(user => user.id !== userId));
+  useEffect(() => {
+    fetchCards();
+  }, []);
 
-        const token = localStorage.getItem('token');
-        fetch('http://localhost:1234/api/card/like', {
+  const fetchCards = async () => {
+    const token = localStorage.getItem('token');
+    const response = await fetch('http://localhost:1234/api/cards', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+    if (response.ok) {
+      const data = await response.json();
+      setCards(data);
+    } else {
+      console.error('Failed to fetch cards:', response.statusText);
+    }
+  };
+
+  const handleSwipeLeft = (card) => {
+    console.log('Swiped left on user:', card._id);
+    handleDislike(card._id);
+  };
+
+  const handleSwipeRight = async (card) => {
+    console.log('Swiped right on user:', card._id);
+    await handleLike(card);
+  };
+
+  const handleLike = async (card) => {
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch('http://localhost:1234/api/card/like', {
             method: 'POST',
             headers: {
+                'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify({
-                likedUserId: userId,
-                like: true
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            console.log('Like response:', data);
-        })
-        .catch(error => {
-            console.error('Error liking user:', error);
+            body: JSON.stringify({ likedUserId: card.userId }),
         });
-    };
+  
+        const data = await response.json();
+        if (response.ok) {
+            // Log the success message
+            console.log(data.message);
+            // Navigate to chat page if a chatId is returned
+            if (data.chatId) {
+                navigate(`/chat/${data.chatId}`);
+            }
+        } else {
+            throw new Error(data.message || 'Error liking the user.');
+        }
+    } catch (error) {
+        console.error('Like failed:', error);
+    }
+  };
 
-    return (
-        <Container>
-            <Box sx={{
-                display: 'flex', // Use flexbox
-                alignItems: 'center', // Center vertically
-                justifyContent: 'center', // Center horizontally
-                height: '100vh', // Full viewport height
-                marginTop: '0px',
-                overflow: 'hidden',
-            }}>
-                {users.map((user, index) => (
-                        <UserCard
-                            key={user.id}
-                            user={user}
-                            onSwipeLeft={() => handleSwipeLeft(user.id)}
-                            onSwipeRight={() => handleSwipeRight(user.id)}
-                            // We apply the zIndex inversely so that the first card is on top
-                            style={{
-                                position: 'absolute',
-                                top: `${index * 10}px`,
-                                left: '50%',
-                                transform: 'translateX(-50%)',
-                                zIndex: users.length - index,
-                                transition: 'transform 0.5s',
-                                // We can add more styling for the card spacing and shadows if needed
-                            }}
-                        />
-                ))}
-            </Box>
-        </Container>
-      );
+  const handleDislike = (cardId) => {
+    // Here you can implement the logic to handle the dislike
+    console.log('Disliked card with ID:', cardId);
+    setCards(cards.filter((card) => card._id !== cardId));
+    // You can also call an API endpoint to update the dislike in your backend
+  };
 
+  return (
+    <Container>
+    <Box sx={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexWrap: 'wrap',
+        gap: 2,
+        padding: 2,
+      }}>
+      {cards.map((card, index) => (
+        <UserCard
+          key = {card._id}
+          card={card}
+          onSwipeLeft={() => handleSwipeLeft(card)}
+          onSwipeRight={() => handleSwipeRight(card)}
+          onLike={() => handleLike(card)}
+          style = {{
+            position: 'absolute',
+            top: `${index * 10}px`,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: cards.length - index,
+            transition: 'transform 0.5s',
+          }}
+        />
+      ))}
+    </Box>
+  </Container>
+  );
 };
 
 export default CardPage;

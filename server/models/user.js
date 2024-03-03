@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 
 const userSchema = new mongoose.Schema({
   likes: [{
@@ -28,7 +29,7 @@ const userSchema = new mongoose.Schema({
   profile: {
     name: {
       type: String,
-      required: true
+      required: false
     },
     avatar: {
       type: String,
@@ -45,22 +46,6 @@ const userSchema = new mongoose.Schema({
   }
 });
 
-userSchema.pre('save', function(next) {
-    let user = this;
-  
-    // Only encrypt the password when user edit it
-    if (!user.isModified('password')) return next();
-  
-    bcrypt.genSalt(10, function(err, salt) {
-        if (err) return next(err);
-  
-        bcrypt.hash(user.password, salt, function(err, hash) {
-            if (err) return next(err);
-            user.password = hash;
-            next();
-        });
-    });
-});
 
 
 const User = mongoose.model('User', userSchema);

@@ -11,241 +11,358 @@ const path = require('path');
 const User = require('../models/user');
 const Card = require('../models/card');
 const Chat = require('../models/chat');
+const crypto = require('crypto');
+
+// Helper function to hash a password
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
 
 
+mongoose.connect('mongodb://localhost:27017/projectdb', { 
+    useNewUrlParser: true, 
+    useUnifiedTopology: true 
+});
+const verifyToken = (req, res, next) => {
+    // Get auth header value
+    const bearerHeader = req.headers['authorization'];
+    if (typeof bearerHeader !== 'undefined') {
+      // Split at the space (Bearer TOKEN)
+      const bearer = bearerHeader.split(' ');
+      // Get token from array
+      const bearerToken = bearer[1];
+      // Verify token
+      jwt.verify(bearerToken, 'verySecretKey123', (err, authData) => {
+        if (err) {
+          // Forbidden
+          res.sendStatus(403);
+        } else {
+          // Next middleware
+          req.user = authData;
+          next();
+        }
+      });
+    } else {
+      // Forbidden
+      res.sendStatus(403);
+    }
+  };
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+// Register route
+router.post('/account/register', upload.single('avatar'), async (req, res) => {
+    try {
+        let { email, username, password } = req.body;
+        
 
-mongoose.connect('mongodb://localhost:27017/projectdb', { useNewUrlParser: true, useUnifiedTopology: true });
+        let user = await User.findOne({ email });
+        if (user) {
+            return res.status(400).json({ msg: 'Email already exists' });
+        }
 
-const storage = multer.diskStorage({
-    destination: function(req, file, cb) {
-      cb(null, 'uploads/') // Ensure the file exists
-    },
-    filename: function(req, file, cb) {
-      cb(null, Date.now() + path.extname(file.originalname));
+        // Hash the password
+        password = hashPassword(password);
+
+        let avatarData = 'default_avatar_url'; // Default avatar URL
+        if (req.file) {
+            const avatarBuffer = req.file.buffer;
+            avatarData = `data:${req.file.mimetype};base64,${avatarBuffer.toString('base64')}`;
+        }
+        
+
+        // Create a new user with the hashed password and Base64 encoded avatar
+        user = new User({ email, username, password });
+        await user.save();
+
+        res.status(201).json({ msg: 'User registered successfully' });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server error' });
     }
 });
 
-const upload = multer({ storage: storage }).single('avatar');
 
-// Register route
-router.post('/account/register',
 
-    [
-        body('email').isEmail(),
-        body('password').isStrongPassword({
-            minLength: 8, 
-            minLowercase: 1, 
-            minUppercase: 1, 
-            minNumbers: 1, 
-            minSymbols: 1
-        })
-    ],
 
-    async (req, res) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            // Send code 400 if password is not strong enough
-            return res.status(400).json({ errors: errors.array() });
-        }
-
-        const avatarPath = req.file ? req.file.path : 'default_avatar_url';
-
-        const { email, username, password } = req.body;
-        const profile = req.body.profile ? JSON.parse(req.body.profile) : {};
-        profile.avatar = avatarPath;
-        
-
-        try {
-            // Check if email already existed
-            let user = await User.findOne({ email });
-            if (user) {
-                return res.status(400).json({ errors: [{ msg: 'Email already exists' }] });
-            }
-
-            user = new User({
-                email,
-                username,
-                password,
-                profile
-            });
-
-            await user.save();
-
-            res.status(201).json({ msg: 'User registered successfully' });
-        } catch (err) {
-            console.error(err.message);
-            res.status(500).send('Server error');
-        }
-
-});
-
-// Login route
-router.post('/account/login',  async (req, res) => {
+  router.post('/account/login', async (req, res) => {
     const { email, password } = req.body;
 
     try {
-        // Check if user existed
-        const user = await User.findOne({ email: email });
-        if (!user) {
-          return res.status(400).send('Invalid email or password.');
-        }
-
-        const isMatch = await bcrypt.compare(req.body.password, user.password);
-        if (!isMatch) {
-          return res.status(400).send('Invalid email or password.');
-        }
-
-        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-
-        res.status(200).json({ token });
-    } catch (err) {
-        res.status(500).send('Server error during login.');
-    }
+      const user = await User.findOne({ email });
+      if (!user) {
+        // User not found with this email
+        return res.status(400).json({ msg: 'Invalid email or password.' });
+      }
   
+      // Hash the incoming password and compare it with the hashed password in the database
+      const hashedPassword = hashPassword(password);
+      console.log(hashedPassword)
+      console.log(user.password)
+      if (hashedPassword !== user.password) {
+        // Password does not match
+        return res.status(400).json({ msg: 'Invalid email or password.' });
+      }
+  
+      // Password matches, create the JWT payload
+      const payload = { id: user._id };
+      // Sign the token with the same key as in the register route
+      const token = jwt.sign(payload, 'verySecretKey123', { expiresIn: '1h' });
+  
+      // Send the token back to the client
+      res.json({ token });
+    } catch (err) {
+      // Handle errors
+      console.error('Server error during login:', err);
+      res.status(500).json({ msg: 'Server error during login.' });
+    }
 });
 
-router.get('/account/google',
-    passport.authenticate('google', { scope: ['profile', 'email'] })
-);
 
-router.get('/account/auth/google/callback',
-    passport.authenticate('google', { failureRedirect: '/login' }),
 
-    function(req, res) {
-        res.redirect('/');
-      }
-);
-
-router.get('/profile', passport.authenticate('jwt', { session: false }), (req, res) => {
-    User.findById(req.user.id)
-    .then(user => {
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
+// Route to update the current user's profile
+// Route to update the current user's profile
+// Route to update the current user's profile
+router.put('/profile', verifyToken, upload.single('avatar'), async (req, res) => {
+    try {
+        const userId = req.user.id;
+        
+        const { userName, description, cardId } = req.body;
+        console.log(userId)
+        // Check for username uniqueness
+        const existingUser = await User.findOne({ username: userName, _id: { $ne: userId } });
+        if (existingUser) {
+            return res.status(400).json({ message: 'Username already exists' });
         }
-        res.json(user.profile);
-    })
-    .catch(err => res.status(500).json({ message: 'Server error', error: err }));
-  });
 
-router.post('/profile/update', passport.authenticate('jwt', { session: false}), async (req, res) => {
-    const { name, avatar, description } = req.body;
+        let avatarData;
+        if (req.file) {
+            avatarData = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+        } else {
+            const user = await User.findById(userId);
+            avatarData = user.profile.avatar;
+        }
+
+        // Update the user's username and profile
+        const updatedUser = await User.findByIdAndUpdate(userId, {
+            username: userName,
+            'profile.avatar': avatarData,
+            'profile.description': description
+        }, { new: true });
+        
+        // If there's a cardId, update the card information as well
+        if (cardId) {
+            await Card.findByIdAndUpdate(cardId, {
+                userName: userName,
+                description: description,
+                avatarImage: avatarData
+            }, { new: true });
+        }
+
+        res.json({ message: 'Profile and card updated successfully', profile: updatedUser.profile });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error', error });
+    }
+});
+router.get('/profile', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    console.log(user)
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    console.log(user)
+    // Send all user information except the password
+    res.json(user); // This will include username, email, profile, createdAt, likes, and likedBy
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error', error });
+  }
+});
+
+
+
+
+
+router.get('/cards', verifyToken, async (req, res) => {
+    try {
+        // 如果您想获取所有卡片，不管用户ID，请移除userId条件
+        const cards = await Card.find({});
+        res.json(cards);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error', error });
+    }
+});
+
+
+
+router.post('/card', verifyToken, upload.single('cardImage'), async (req, res) => {
+    const { description, userName } = req.body;
+    const userId = req.user.id; // Extracted from the verified token
+    let cardImagePath = '';
+  
+    if (req.file) {
+        cardImagePath = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    }
 
     try {
-        // Find and update user profile
-        const updatedUser = await User.findByIdAndUpdate(req.user.id, 
-            { $set: { "profile.name": name, "profile.avatar": avatar, "profile.description": description }},
-            { new: true } // return updated profile
-        );
-
-        if (!updatedUser) {
-            return res.status(404).json({ message: 'User not found' });
+        // Check if the user already has a card
+        let card = await Card.findOne({ userId });
+        if (card) {
+            // Update existing card
+            card.description = description;
+            card.userName = userName; // Update the username
+            if (req.file) card.backgroundImage = cardImagePath;
+        } else {
+            // Create a new card
+            card = new Card({
+                userId,
+                userName, // Add the username here
+                description,
+                backgroundImage: cardImagePath
+                // Do not add the avatar image
+            });
         }
-
-        res.json({ message: 'Profile updated successfully', profile: updatedUser.profile });
-
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: 'Server error', error: err });
+        
+        await card.save();
+        
+        res.json({ msg: 'Card updated successfully', card });
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: 'Server error', error });
     }
-
 });
 
-router.get('/card', passport.authenticate('jwt', { session: false }), (req, res) => {
-    Card.findOne({ userId: req.user.id })
-    .populate('userId', 'profile.name') // Get name related to the card
-    .then(card => {
-        if (!card) {
-            return res.status(404).json({ message: 'Card not found' });
-        }
-        res.json(card);
-    })
-    .catch(err => res.status(500).json({ message: 'Server error', error: err }));
+router.get('/matches', verifyToken, async (req, res) => {
+    try {
+        // Assuming 'likes' is an array of user IDs that the logged-in user has liked
+        // and 'likedBy' is an array of user IDs of users who have liked the logged-in user
+        const user = await User.findById(req.user.id);
+        const matches = user.likes.filter(userId => user.likedBy.includes(userId));
+
+        // Populate match details if needed
+        const matchDetails = await User.find({ '_id': { $in: matches } }).select('-password');
+        res.json(matchDetails);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error', error });
+    }
 });
 
-router.post('/card', passport.authenticate('jwt', { session: false }), (req, res) => {
-    const { backgroundImage, description } = req.body;
-    Card.findOneAndUpdate(
-        { userId: req.user.id },
-        { $set: { backgroundImage, description }},
-        { new: true } // Return updated card
-    )
-    .then(card => {
-        if (!card) {
-            return res.status(404).json({ message: 'Card not found' });
-        }
-        res.json(card);
-    })
-    .catch(err => res.status(500).json({ message: 'Server error', error: err }));
-});
 
-router.post('/card/like', passport.authenticate('jwt', { session: false }), async (req, res) => {
-    const { likedUserId, like } = req.body;
+router.post('/card/like', verifyToken, async (req, res) => {
+    const { likedUserId } = req.body;
 
     try {
         const currentUser = await User.findById(req.user.id);
         const likedUser = await User.findById(likedUserId);
 
         if (!likedUser) {
-            return res.status(404).json({ message: 'User not found' });
+            return res.status(404).json({ message: 'Liked user not found' });
         }
 
-        if (like) {
-            // Add to user's likes list
-            if (!currentUser.likes.includes(likedUserId)) {
-                currentUser.likes.push(likedUserId);
-                await currentUser.save();
-            }
-            // Add to user's likedby list
-            if (!likedUser.likedBy.includes(req.user.id)) {
-                likedUser.likedBy.push(req.user.id);
-                await likedUser.save();
-            }
-        } else {
-            currentUser.likes = currentUser.likes.filter(id => id.toString() !== likedUserId);
+        // Check if a chat already exists, if not, create one
+        let chat = await Chat.findOne({ participants: { $all: [req.user.id, likedUserId] } });
+        if (!chat) {
+            chat = new Chat({ participants: [req.user.id, likedUserId], messages: [] });
+            await chat.save();
+        }
+
+        // Add liked user to currentUser's likes if not already liked
+        if (!currentUser.likes.includes(likedUserId)) {
+            currentUser.likes.push(likedUserId);
             await currentUser.save();
-
-            likedUser.likedBy = likedUser.likedBy.filter(id => id.toString() !== req.user.id);
-            await likedUser.save();
         }
 
-        res.status(200).json({ message: like ? 'Liked successfully' : 'Like removed successfully' });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: 'Server error' });
+        res.json({ message: 'Liked successfully', chatId: chat._id });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error', error });
     }
 });
 
-router.post('/chat/send', passport.authenticate('jwt', { session: false }), (req, res) => {
-    const { chatId, message } = req.body;
+  
 
-    Chat.findById(chatId)
-    .then(chat => {
-        if (!chat) {
-            return res.status(404).json({ message: 'Chat not found' });
-        }
+router.post('/dislike', verifyToken, async (req, res) => {
+    const { dislikedUserId } = req.body;
+    try {
+        const currentUser = await User.findById(req.user.id);
 
-        // Check if user is a participant
-        if (!chat.participants.some(participant => participant.equals(req.user.id))) {
-            return res.status(403).json({ message: 'User not a participant in the chat' });
-        }
+        // Remove disliked user from currentUser's likes
+        currentUser.likes = currentUser.likes.filter(userId => userId.toString() !== dislikedUserId);
+        await currentUser.save();
 
-        const newMessage = {
-            sender: req.user.id,
-            message: messageText,
-            timestamp: new Date()
-        };
-
-        // Add message to history
-        chat.messages.push(newMessage);
-
-        // Save updated chat history
-        chat.save()
-        .then(updatedChat => res.json(updatedChat))
-        .catch(err => res.status(500).json({ message: 'Error saving message', error: err }));
-    })
-    .catch(err => res.status(500).json({ message: 'Error finding chat', error: err }));
+        res.json({ message: 'Disliked successfully' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error', error });
+    }
 });
 
+
+// Get chat history
+// Get chat messages with search and pagination
+router.get('/chat/:chatId', verifyToken, async (req, res) => {
+    const { chatId } = req.params;
+    const { page = 1, limit = 10, searchTerm = '' } = req.query;
+  
+    try {
+      const chat = await Chat.findById(chatId)
+                             .populate('messages.sender', 'username profile.avatar');
+  
+      if (!chat) {
+        return res.status(404).json({ message: 'Chat not found' });
+      }
+  
+      if (!chat.participants.some(participantId => participantId.equals(req.user.id))) {
+        return res.status(403).json({ message: 'User not a participant in the chat' });
+      }
+  
+      // Filter messages that match the search term and implement pagination
+      const messages = chat.messages
+                           .filter(msg => msg.message.toLowerCase().includes(searchTerm.toLowerCase()))
+                           .slice((page - 1) * limit, page * limit);
+  
+      res.json({ messages, page, totalPages: Math.ceil(chat.messages.length / limit) });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: 'Server error', error });
+    }
+  });
+  
+  // Send chat message
+  router.post('/chat/send', verifyToken, async (req, res) => {
+    const { chatId, message } = req.body;
+  
+    try {
+      const chat = await Chat.findById(chatId);
+  
+      if (!chat) {
+        return res.status(404).json({ message: 'Chat not found' });
+      }
+  
+      // Only allow participants of the chat to send messages
+      if (!chat.participants.some(participantId => participantId.equals(req.user.id))) {
+        return res.status(403).json({ message: 'User not a participant in the chat' });
+      }
+  
+      const newMessage = {
+        sender: req.user.id,
+        message: message,
+        timestamp: new Date() // Timestamp is added when the message is created
+      };
+  
+      chat.messages.push(newMessage);
+      await chat.save();
+  
+      res.json({ message: 'Message sent', newMessage });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: 'Server error', error });
+    }
+  });
+  
 
 
 module.exports = router;
