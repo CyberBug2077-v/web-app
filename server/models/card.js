@@ -16,11 +16,11 @@ const cardSchema = new mongoose.Schema({
   },
   backgroundImage: {
     type: String,
-    default: '' // Assuming store the image as a Base64 string
+    default: '' // Store the image as a Base64 string
   },
   avatarImage: {
     type: String,
-    default: '/static/images/avatars/default.jpg' // Assuming store the avatar as a Base64 string
+    default: '' // Store the avatar as a Base64 string
   }
 });
 

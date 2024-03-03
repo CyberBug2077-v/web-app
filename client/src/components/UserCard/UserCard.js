@@ -70,6 +70,7 @@ const UserCard = ({ card, onSwipeLeft, onSwipeRight, onLike }) => {
                     component="img"
                     height="200"
                     image={card.backgroundImage}
+                    imagePosition="center"
                     alt="User Background"
                 />
             )}
